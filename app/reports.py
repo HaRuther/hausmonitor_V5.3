@@ -1,384 +1,120 @@
-from __future__ import annotations
-
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable
 
 import matplotlib
-
-matplotlib.use("Agg")
+matplotlib.use('Agg')
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle,getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import (
-    Image as RImage,
-    KeepTogether,
-    PageBreak,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
+from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Table,TableStyle,PageBreak,Image as RImage
 
-BLUE = "#17365d"
-ACCENT = "#2878cc"
-GREEN = "#059669"
-ORANGE = "#d97706"
-RED = "#c62828"
-LIGHT_BLUE = "#7fc3ff"
-MUTED = "#667085"
+BLUE='#17365d';ACCENT='#2878cc';GREEN='#059669';ORANGE='#d97706';RED='#c62828';MUTED='#667085'
+BASE=Path(__file__).resolve().parent
 
+def f(v,n=3):return '–' if v is None else f'{v:.{n}f}'
+def esc(v):return str(v if v is not None else '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+def dt(v):
+ try:return datetime.fromisoformat(str(v).replace('Z','+00:00'))
+ except (ValueError,TypeError):return None
 
-def f(value, digits=3):
-    return "–" if value is None else f"{value:.{digits}f}"
+def styles():
+ s=getSampleStyleSheet();s.add(ParagraphStyle(name='Cover',parent=s['Title'],fontSize=28,leading=32,textColor=colors.HexColor(BLUE),alignment=TA_CENTER));s.add(ParagraphStyle(name='Sub',parent=s['Normal'],fontSize=14,leading=18,textColor=colors.HexColor(MUTED),alignment=TA_CENTER));s.add(ParagraphStyle(name='Caption',parent=s['Normal'],fontSize=7.5,leading=9,textColor=colors.HexColor(MUTED),alignment=TA_CENTER));s.add(ParagraphStyle(name='Small',parent=s['Normal'],fontSize=8,leading=10,textColor=colors.HexColor(MUTED)));s['Heading1'].textColor=colors.HexColor(BLUE);s['Heading2'].textColor=colors.HexColor(BLUE);s['Heading3'].textColor=colors.HexColor(BLUE);return s
 
+def tab(rows,widths=None):
+ t=Table(rows,repeatRows=1,colWidths=widths,hAlign='LEFT');t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor(BLUE)),('TEXTCOLOR',(0,0),(-1,0),colors.white),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('GRID',(0,0),(-1,-1),.25,colors.HexColor('#9aa7b4')),('FONTSIZE',(0,0),(-1,-1),7.5),('LEADING',(0,0),(-1,-1),9),('VALIGN',(0,0),(-1,-1),'TOP'),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f4f7fa')]),('PADDING',(0,0),(-1,-1),4)]));return t
 
-def _dt(value):
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
+def fig_image(fig,h=78*mm):
+ b=BytesIO();fig.savefig(b,format='png',dpi=170,bbox_inches='tight',facecolor='white');plt.close(fig);b.seek(0);im=RImage(b,width=181*mm,height=h);im._buffer=b;return im
 
+def axis(ax):
+ loc=mdates.AutoDateLocator(minticks=3,maxticks=8);ax.xaxis.set_major_locator(loc);ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(loc));ax.grid(True,axis='y',color='#d9e1ea',linewidth=.7);ax.spines[['top','right']].set_visible(False);ax.tick_params(labelsize=8)
 
-def _safe_text(value):
-    text = "" if value is None else str(value)
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+def level_chart(cs):
+ r=[]
+ for c in cs:
+  d=dt(c.get('measured_at'));h=c.get('stats',{}).get('house',{});v=h.get('delta');se=h.get('se')
+  if d and v is not None:r.append((d,float(v),float(se) if se is not None else 0))
+ if not r:return None
+ r.sort();x=[z[0] for z in r];y=[z[1] for z in r];lo=[z[1]-z[2] for z in r];hi=[z[1]+z[2] for z in r]
+ fig,ax=plt.subplots(figsize=(8.6,3.6));ax.fill_between(x,lo,hi,color='#7fc3ff',alpha=.35,label='± Standardfehler');ax.plot(x,y,color=ACCENT,lw=2.2,marker='o',label='Änderung Haus');ax.axhline(0,color='#59636e',lw=.9);ax.set_title('Hausänderung gegenüber der Referenz');ax.set_ylabel('Änderung [mm]');axis(ax);ax.legend(frameon=False,fontsize=8);fig.tight_layout();return fig_image(fig)
 
+def sd_chart(cs):
+ r=[]
+ for c in cs:
+  d=dt(c.get('measured_at'));st=c.get('stats',{});a=st.get('SW',{}).get('sd');b=st.get('SO',{}).get('sd')
+  if d and (a is not None or b is not None):r.append((d,a,b))
+ if not r:return None
+ r.sort();x=[z[0] for z in r];a=[float('nan') if z[1] is None else z[1] for z in r];b=[float('nan') if z[2] is None else z[2] for z in r]
+ fig,ax=plt.subplots(figsize=(8.6,3.4));ax.plot(x,a,color=GREEN,lw=2,marker='o',label='SD SW');ax.plot(x,b,color=ORANGE,lw=2,marker='o',label='SD SO');ax.set_title('Standardabweichung der Rohmessungen');ax.set_ylabel('SD [mm]');axis(ax);ax.legend(frameon=False,fontsize=8);fig.tight_layout();return fig_image(fig,74*mm)
 
-def tab(rows, widths=None):
-    safe_rows = []
-    for row in rows:
-        safe_rows.append(
-            [cell if hasattr(cell, "wrapOn") else Paragraph(_safe_text(cell), _table_style()) for cell in row]
-        )
-    table = Table(safe_rows, repeatRows=1, colWidths=widths, hAlign="LEFT")
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(BLUE)),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#9aa7b4")),
-                ("FONTSIZE", (0, 0), (-1, -1), 7.5),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f4f7fa")]),
-            ]
-        )
-    )
-    return table
+def crack_chart(p):
+ r=[]
+ for m in p.get('measurements',[]):
+  d=dt(m.get('measured_at'));v=m.get('value')
+  if d and v is not None:r.append((d,float(v)))
+ if not r:return None
+ r.sort();x=[z[0] for z in r];y=[z[1] for z in r];base=float(p.get('baseline') if p.get('baseline') is not None else y[0]);w=p.get('warning_delta');a=p.get('alarm_delta')
+ fig,ax=plt.subplots(figsize=(8.6,3.3));ax.plot(x,y,color=ACCENT,lw=2.2,marker='o',label='Messwert');ax.axhline(base,color='#59636e',ls='--',lw=1,label='Referenz')
+ if w is not None:
+  w=abs(float(w));ax.axhline(base+w,color=ORANGE,ls='--',lw=1,label='Warnung');ax.axhline(base-w,color=ORANGE,ls='--',lw=1)
+ if a is not None:
+  a=abs(float(a));ax.axhline(base+a,color=RED,ls=':',lw=1,label='Alarm');ax.axhline(base-a,color=RED,ls=':',lw=1)
+ ax.set_title('Rissverlauf: '+str(p.get('name','Messstelle')));ax.set_ylabel('Messwert ['+str(p.get('unit') or 'mm')+']');axis(ax);ax.legend(frameon=False,fontsize=7.5,ncol=2);fig.tight_layout();return fig_image(fig,72*mm)
 
+def image(path,w=82*mm,h=58*mm):
+ try:
+  im=RImage(str(path));im._restrictSize(w,h);return im
+ except Exception:return None
 
-def _table_style():
-    return ParagraphStyle(
-        "ReportTableCell",
-        fontName="Helvetica",
-        fontSize=7.5,
-        leading=9,
-        textColor=colors.HexColor("#172033"),
-    )
+def period(cs,pts):
+ d=[dt(c.get('measured_at')) for c in cs]+[dt(m.get('measured_at')) for p in pts for m in p.get('measurements',[])];d=[x for x in d if x];return f'{min(d):%d.%m.%Y} bis {max(d):%d.%m.%Y}' if d else 'Keine datierten Messungen'
 
+def summary(cs,pts):
+ warnings=sum(1 for p in pts if p.get('status')=='Warnung');alarms=sum(1 for p in pts if p.get('status')=='Alarm');latest=cs[-1].get('stats',{}).get('house',{}).get('quality') if cs else '–';status='Handlungsbedarf' if alarms else 'Beobachten' if warnings else 'Stabil';color=RED if alarms else ORANGE if warnings else GREEN;return warnings,alarms,latest,status,color
 
-def _figure_image(fig, width=181 * mm, height=82 * mm):
-    buffer = BytesIO()
-    fig.savefig(buffer, format="png", dpi=170, bbox_inches="tight", facecolor="white")
-    plt.close(fig)
-    buffer.seek(0)
-    image = RImage(buffer, width=width, height=height)
-    image._source_buffer = buffer
-    return image
+def footer(canvas,doc):
+ canvas.saveState();canvas.setStrokeColor(colors.HexColor('#d9e1ea'));canvas.line(12*mm,10*mm,A4[0]-12*mm,10*mm);canvas.setFont('Helvetica',7.5);canvas.setFillColor(colors.HexColor(MUTED));canvas.drawString(12*mm,6*mm,'Hausmonitor Monitoringbericht');canvas.drawRightString(A4[0]-12*mm,6*mm,f'Seite {doc.page}');canvas.restoreState()
 
-
-def _format_date_axis(ax):
-    locator = mdates.AutoDateLocator(minticks=3, maxticks=8)
-    ax.xaxis.set_major_locator(locator)
-    ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
-    ax.grid(True, axis="y", color="#d9e1ea", linewidth=0.7)
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.tick_params(axis="both", labelsize=8)
-
-
-def build_level_chart(campaigns):
-    rows = []
-    for campaign in campaigns:
-        date = _dt(campaign.get("measured_at"))
-        house = campaign.get("stats", {}).get("house", {})
-        delta = house.get("delta")
-        se = house.get("se")
-        if date is not None and delta is not None:
-            rows.append((date, float(delta), None if se is None else float(se)))
-    if not rows:
-        return None
-    rows.sort(key=lambda item: item[0])
-    dates = [row[0] for row in rows]
-    delta = [row[1] for row in rows]
-    low = [row[1] - row[2] if row[2] is not None else row[1] for row in rows]
-    high = [row[1] + row[2] if row[2] is not None else row[1] for row in rows]
-
-    fig, ax = plt.subplots(figsize=(8.6, 3.7))
-    ax.fill_between(dates, low, high, color=LIGHT_BLUE, alpha=0.35, label="± Standardfehler")
-    ax.plot(dates, delta, color=ACCENT, linewidth=2.2, marker="o", markersize=4, label="Änderung Haus")
-    ax.axhline(0, color="#59636e", linewidth=0.9)
-    ax.set_title("Hausänderung gegenüber der Referenz")
-    ax.set_ylabel("Änderung [mm]")
-    _format_date_axis(ax)
-    ax.legend(loc="best", fontsize=8, frameon=False)
-    fig.tight_layout()
-    return _figure_image(fig)
-
-
-def build_sd_chart(campaigns):
-    rows = []
-    for campaign in campaigns:
-        date = _dt(campaign.get("measured_at"))
-        stats = campaign.get("stats", {})
-        sw = stats.get("SW", {}).get("sd")
-        so = stats.get("SO", {}).get("sd")
-        if date is not None and (sw is not None or so is not None):
-            rows.append((date, sw, so))
-    if not rows:
-        return None
-    rows.sort(key=lambda item: item[0])
-    dates = [row[0] for row in rows]
-    sw = [float("nan") if row[1] is None else float(row[1]) for row in rows]
-    so = [float("nan") if row[2] is None else float(row[2]) for row in rows]
-
-    fig, ax = plt.subplots(figsize=(8.6, 3.5))
-    ax.plot(dates, sw, color=GREEN, linewidth=2.0, marker="o", markersize=3.5, label="SD SW")
-    ax.plot(dates, so, color=ORANGE, linewidth=2.0, marker="o", markersize=3.5, label="SD SO")
-    ax.set_title("Standardabweichung der Rohmessungen")
-    ax.set_ylabel("Standardabweichung [mm]")
-    _format_date_axis(ax)
-    ax.legend(loc="best", fontsize=8, frameon=False)
-    fig.tight_layout()
-    return _figure_image(fig, height=78 * mm)
-
-
-def build_crack_chart(point):
-    rows = []
-    for measurement in point.get("measurements", []):
-        date = _dt(measurement.get("measured_at"))
-        value = measurement.get("value")
-        if date is not None and value is not None:
-            rows.append((date, float(value)))
-    if not rows:
-        return None
-    rows.sort(key=lambda item: item[0])
-    dates = [row[0] for row in rows]
-    values = [row[1] for row in rows]
-    baseline = point.get("baseline")
-    if baseline is None:
-        baseline = values[0]
-    baseline = float(baseline)
-    warning = point.get("warning_delta")
-    alarm = point.get("alarm_delta")
-
-    fig, ax = plt.subplots(figsize=(8.6, 3.4))
-    ax.plot(dates, values, color=ACCENT, linewidth=2.2, marker="o", markersize=4, label="Messwert")
-    ax.axhline(baseline, color="#59636e", linewidth=1.0, linestyle="--", label="Referenz")
-    if warning is not None:
-        warning = abs(float(warning))
-        ax.axhline(baseline + warning, color=ORANGE, linewidth=1.1, linestyle="--", label="Warnbereich")
-        ax.axhline(baseline - warning, color=ORANGE, linewidth=1.1, linestyle="--")
-    if alarm is not None:
-        alarm = abs(float(alarm))
-        ax.axhline(baseline + alarm, color=RED, linewidth=1.1, linestyle=":", label="Alarmbereich")
-        ax.axhline(baseline - alarm, color=RED, linewidth=1.1, linestyle=":")
-    ax.set_title(f"Rissverlauf: {point.get('name', 'Messstelle')}")
-    ax.set_ylabel(f"Messwert [{point.get('unit') or 'mm'}]")
-    _format_date_axis(ax)
-    ax.legend(loc="best", fontsize=7.5, frameon=False, ncol=2)
-    fig.tight_layout()
-    return _figure_image(fig, height=74 * mm)
-
-
-def _image_flowable(path, max_width=82 * mm, max_height=58 * mm):
-    path = Path(path)
-    if not path.is_file():
-        return None
-    try:
-        image = RImage(str(path))
-        image._restrictSize(max_width, max_height)
-        return image
-    except Exception:
-        return None
-
-
-def _photo_pair(first_path, latest_path, first_label, latest_label, styles):
-    first = _image_flowable(first_path)
-    latest = _image_flowable(latest_path)
-    cells = []
-    for image, label in ((first, first_label), (latest, latest_label)):
-        content = []
-        if image is not None:
-            content.append(image)
-        content.append(Spacer(1, 1.5 * mm))
-        content.append(Paragraph(_safe_text(label), styles["Caption"]))
-        cells.append(content)
-    table = Table([cells], colWidths=[88 * mm, 88 * mm], hAlign="LEFT")
-    table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BOX", (0, 0), (-1, -1), 0.25, colors.HexColor("#d9e1ea")), ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d9e1ea")), ("PADDING", (0, 0), (-1, -1), 5)]))
-    return table
-
-
-def _level_photo_paths(level_dir, campaign_id):
-    root = Path(level_dir)
-    if not root.is_dir():
-        return []
-    allowed = {".jpg", ".jpeg", ".png", ".webp"}
-    return sorted(path for path in root.glob(f"level-{campaign_id}-*") if path.suffix.lower() in allowed)
-
-
-def _period(campaigns, points):
-    dates = []
-    for campaign in campaigns:
-        date = _dt(campaign.get("measured_at"))
-        if date:
-            dates.append(date)
-    for point in points:
-        for measurement in point.get("measurements", []):
-            date = _dt(measurement.get("measured_at"))
-            if date:
-                dates.append(date)
-    if not dates:
-        return "Keine datierten Messungen"
-    return f"{min(dates):%d.%m.%Y} bis {max(dates):%d.%m.%Y}"
-
-
-def _styles():
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="CoverTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=28, leading=32, textColor=colors.HexColor(BLUE), alignment=TA_CENTER, spaceAfter=7 * mm))
-    styles.add(ParagraphStyle(name="CoverSub", parent=styles["Normal"], fontSize=14, leading=18, textColor=colors.HexColor(MUTED), alignment=TA_CENTER, spaceAfter=12 * mm))
-    styles.add(ParagraphStyle(name="Caption", parent=styles["Normal"], fontSize=7.5, leading=9, textColor=colors.HexColor(MUTED), alignment=TA_CENTER))
-    styles.add(ParagraphStyle(name="Small", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.HexColor(MUTED)))
-    styles["Heading1"].textColor = colors.HexColor(BLUE)
-    styles["Heading2"].textColor = colors.HexColor(BLUE)
-    styles["Heading3"].textColor = colors.HexColor(BLUE)
-    return styles
-
-
-def _page_number(canvas, doc):
-    canvas.saveState()
-    canvas.setStrokeColor(colors.HexColor("#d9e1ea"))
-    canvas.line(12 * mm, 10 * mm, A4[0] - 12 * mm, 10 * mm)
-    canvas.setFont("Helvetica", 7.5)
-    canvas.setFillColor(colors.HexColor(MUTED))
-    canvas.drawString(12 * mm, 6 * mm, "Hausmonitor Monitoringbericht")
-    canvas.drawRightString(A4[0] - 12 * mm, 6 * mm, f"Seite {doc.page}")
-    canvas.restoreState()
-
-
-def make_report(cs, pts, assessment, level_dir, crack_dir, year=None):
-    campaigns = list(cs)
-    points = list(pts)
-    if year:
-        campaigns = [c for c in campaigns if str(c.get("measured_at", "")).startswith(str(year))]
-        filtered_points = []
-        for point in points:
-            clone = dict(point)
-            clone["measurements"] = [m for m in point.get("measurements", []) if str(m.get("measured_at", "")).startswith(str(year))]
-            filtered_points.append(clone)
-        points = filtered_points
-
-    output = BytesIO()
-    doc = SimpleDocTemplate(output, pagesize=A4, rightMargin=12 * mm, leftMargin=12 * mm, topMargin=13 * mm, bottomMargin=14 * mm, title=f"Hausmonitor Bericht{' ' + str(year) if year else ''}", author="Hausmonitor")
-    styles = _styles()
-    story = []
-
-    # Titelseite
-    story.extend([Spacer(1, 24 * mm), Paragraph("HAUSMONITOR", styles["CoverTitle"]), Paragraph(f"Monitoringbericht{' ' + str(year) if year else ''}", styles["CoverSub"])])
-    summary = [
-        ["Berichtszeitraum", _period(campaigns, points)],
-        ["Erstellt am", datetime.now().strftime("%d.%m.%Y %H:%M")],
-        ["Nivellement-Messreihen", str(len(campaigns))],
-        ["Rissmessstellen", str(len(points))],
-    ]
-    cover_table = Table(summary, colWidths=[62 * mm, 90 * mm], hAlign="CENTER")
-    cover_table.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eaf2fb")), ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor(BLUE)), ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"), ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#c8d4df")), ("PADDING", (0, 0), (-1, -1), 8), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
-    story.extend([cover_table, Spacer(1, 12 * mm), Paragraph("Automatische Lagebeurteilung", styles["Heading2"]), Paragraph(_safe_text(assessment), styles["BodyText"]), Spacer(1, 16 * mm), Paragraph("Hinweis: Statistische Bewertungen unterstützen das Monitoring, ersetzen aber keine bautechnische oder geotechnische Begutachtung.", styles["Small"]), PageBreak()])
-
-    # Nivellement
-    story.extend([Paragraph("Nivellement", styles["Heading1"]), Spacer(1, 2 * mm)])
-    if campaigns:
-        rows = [["Datum", "Haus", "Δ", "SE", "SNR", "Terrasse", "GW", "Luft"]]
-        for campaign in campaigns:
-            stats = campaign.get("stats", {})
-            house = stats.get("house", {})
-            terrace = stats.get("terrace", {})
-            rows.append([str(campaign.get("measured_at", "")).replace("T", " "), f(house.get("value")), f(house.get("delta")), f(house.get("se")), f(house.get("snr"), 2), f(terrace.get("value")), f(campaign.get("groundwater")), f(campaign.get("air_temp"), 1)])
-        story.extend([tab(rows, [32 * mm, 20 * mm, 18 * mm, 18 * mm, 17 * mm, 22 * mm, 18 * mm, 17 * mm]), Spacer(1, 5 * mm)])
-        level_chart = build_level_chart(campaigns)
-        if level_chart:
-            story.extend([Paragraph("Änderung mit Fehlerband", styles["Heading2"]), level_chart, Spacer(1, 4 * mm)])
-        sd_chart = build_sd_chart(campaigns)
-        if sd_chart:
-            story.extend([Paragraph("Messstreuung", styles["Heading2"]), sd_chart, Spacer(1, 4 * mm)])
-
-        photo_sections = []
-        for campaign in campaigns:
-            photos = _level_photo_paths(level_dir, campaign.get("id"))
-            if not photos:
-                continue
-            photo_sections.extend([Paragraph(f"Messreihe {_safe_text(str(campaign.get('measured_at', '')).replace('T', ' '))}", styles["Heading3"])])
-            row = []
-            for path in photos:
-                image = _image_flowable(path, 82 * mm, 58 * mm)
-                if image:
-                    row.append([image, Paragraph(_safe_text(path.name), styles["Caption"])])
-                if len(row) == 2:
-                    photo_sections.append(Table([row], colWidths=[88 * mm, 88 * mm], hAlign="LEFT", style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("PADDING", (0, 0), (-1, -1), 4)]))
-                    row = []
-            if row:
-                while len(row) < 2:
-                    row.append("")
-                photo_sections.append(Table([row], colWidths=[88 * mm, 88 * mm], hAlign="LEFT", style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("PADDING", (0, 0), (-1, -1), 4)]))
-        if photo_sections:
-            story.extend([PageBreak(), Paragraph("Nivellement-Fotos", styles["Heading1"]), *photo_sections])
-    else:
-        story.append(Paragraph("Für den gewählten Zeitraum liegen keine Nivellement-Messreihen vor.", styles["BodyText"]))
-
-    # Rissmonitoring
-    story.extend([PageBreak(), Paragraph("Rissmonitoring", styles["Heading1"]), Spacer(1, 2 * mm)])
-    if not points:
-        story.append(Paragraph("Es sind keine Rissmessstellen vorhanden.", styles["BodyText"]))
-    for index, point in enumerate(points):
-        if index:
-            story.append(PageBreak())
-        measurements = point.get("measurements", [])
-        heading = _safe_text(point.get("name") or "Messstelle")
-        meta = f"Ort: {_safe_text(point.get('location') or '–')} · Art: {_safe_text(point.get('crack_type') or '–')} · Status: {_safe_text(point.get('status') or '–')} · Änderung: {f(point.get('delta'))} {_safe_text(point.get('unit') or 'mm')}"
-        story.extend([Paragraph(heading, styles["Heading2"]), Paragraph(meta, styles["BodyText"]), Spacer(1, 3 * mm)])
-        chart = build_crack_chart(point)
-        if chart:
-            story.extend([chart, Spacer(1, 3 * mm)])
-        if measurements:
-            rows = [["Datum", "Temp.", "Wert", "Δ", "Notiz"]]
-            for measurement in measurements:
-                rows.append([str(measurement.get("measured_at", "")).replace("T", " "), f(measurement.get("air_temp"), 1), f(measurement.get("value")), f(measurement.get("delta")), measurement.get("notes") or ""])
-            story.extend([tab(rows, [38 * mm, 18 * mm, 21 * mm, 21 * mm, 76 * mm]), Spacer(1, 4 * mm)])
-        else:
-            story.append(Paragraph("Für den gewählten Zeitraum liegen keine Messungen vor.", styles["BodyText"]))
-
-        photos = [m for m in measurements if m.get("photo_filename") and (Path(crack_dir) / m["photo_filename"]).is_file()]
-        if photos:
-            first = photos[0]
-            latest = photos[-1]
-            story.extend([Paragraph("Fotovergleich", styles["Heading3"]), _photo_pair(Path(crack_dir) / first["photo_filename"], Path(crack_dir) / latest["photo_filename"], f"Erstes Foto · {str(first.get('measured_at', '')).replace('T', ' ')}", f"Aktuelles Foto · {str(latest.get('measured_at', '')).replace('T', ' ')}", styles)])
-
-    story.extend([Spacer(1, 6 * mm), Paragraph("Dokumentationshinweis", styles["Heading2"]), Paragraph("Dieser Bericht wurde aus den in Hausmonitor gespeicherten Messreihen, statistischen Kennwerten und Bilddateien erzeugt. Fehlende Werte werden mit einem Gedankenstrich dargestellt.", styles["Small"])])
-    doc.build(story, onFirstPage=_page_number, onLaterPages=_page_number)
-    output.seek(0)
-    return output
+def make_report(cs,pts,assessment,level_dir,crack_dir,year=None):
+ cs=list(cs);pts=list(pts)
+ if year:
+  cs=[c for c in cs if str(c.get('measured_at','')).startswith(str(year))];pts=[dict(p,measurements=[m for m in p.get('measurements',[]) if str(m.get('measured_at','')).startswith(str(year))]) for p in pts]
+ s=styles();b=BytesIO();doc=SimpleDocTemplate(b,pagesize=A4,rightMargin=12*mm,leftMargin=12*mm,topMargin=13*mm,bottomMargin=14*mm,title=f'Hausmonitor Bericht {year or ""}',author='Hausmonitor');story=[];warnings,alarms,quality,status,status_color=summary(cs,pts)
+ logo=next((q for q in [BASE/'static/icons/icon-192.png',BASE/'static/icons/icon-512.png'] if q.exists()),None)
+ story.append(Spacer(1,10*mm))
+ if logo:
+  im=image(logo,32*mm,32*mm)
+  if im:im.hAlign='CENTER';story+=[im,Spacer(1,5*mm)]
+ story+=[Paragraph('HAUSMONITOR',s['Cover']),Spacer(1,2*mm),Paragraph(f'Monitoringbericht{" "+str(year) if year else ""}',s['Sub']),Spacer(1,8*mm)]
+ meta=Table([['Berichtszeitraum',period(cs,pts)],['Erstellt am',datetime.now().strftime('%d.%m.%Y %H:%M')],['Nivellement-Messreihen',len(cs)],['Rissmessstellen',len(pts)]],colWidths=[62*mm,90*mm],hAlign='CENTER');meta.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),colors.HexColor('#eaf2fb')),('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),('TEXTCOLOR',(0,0),(0,-1),colors.HexColor(BLUE)),('GRID',(0,0),(-1,-1),.35,colors.HexColor('#c8d4df')),('PADDING',(0,0),(-1,-1),8)]));story+=[meta,Spacer(1,8*mm)]
+ state=Table([[Paragraph('Gesamtstatus',s['Small']),Paragraph(f'<b>{status}</b>',s['Heading2'])]],colWidths=[50*mm,102*mm],hAlign='CENTER');state.setStyle(TableStyle([('BOX',(0,0),(-1,-1),1.2,colors.HexColor(status_color)),('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f7fafc')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('PADDING',(0,0),(-1,-1),8)]));story+=[state,Spacer(1,7*mm),Paragraph('Automatische Lagebeurteilung',s['Heading2']),Paragraph(esc(assessment),s['BodyText']),Spacer(1,8*mm)]
+ kpi=Table([['Messreihen','Messstellen','Warnungen','Alarme'],[len(cs),len(pts),warnings,alarms]],colWidths=[38*mm]*4,hAlign='CENTER');kpi.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor(BLUE)),('TEXTCOLOR',(0,0),(-1,0),colors.white),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('ALIGN',(0,0),(-1,-1),'CENTER'),('FONTSIZE',(0,1),(-1,1),16),('GRID',(0,0),(-1,-1),.3,colors.HexColor('#c8d4df')),('PADDING',(0,0),(-1,-1),7)]));story+=[kpi,Spacer(1,8*mm),Paragraph('Hinweis: Statistische Bewertungen unterstützen das Monitoring, ersetzen aber keine bautechnische oder geotechnische Begutachtung.',s['Small']),PageBreak()]
+ story+=[Paragraph('Inhaltsverzeichnis',s['Heading1']),Paragraph('1. Management-Zusammenfassung ........................................ 1',s['BodyText']),Paragraph('2. Nivellement ................................................................ 3',s['BodyText']),Paragraph('3. Rissmonitoring ............................................................ nach Nivellement',s['BodyText']),Paragraph('4. Dokumentationshinweis ............................................... Schlussseite',s['BodyText']),PageBreak(),Paragraph('2. Nivellement',s['Heading1'])]
+ if cs:
+  rows=[['Datum','Haus','Δ','SE','SNR','Terrasse','GW','Luft']]
+  for c in cs:
+   st=c.get('stats',{});h=st.get('house',{});t=st.get('terrace',{});rows.append([str(c.get('measured_at','')).replace('T',' '),f(h.get('value')),f(h.get('delta')),f(h.get('se')),f(h.get('snr'),2),f(t.get('value')),f(c.get('groundwater')),f(c.get('air_temp'),1)])
+  story+=[tab(rows,[32*mm,20*mm,18*mm,18*mm,17*mm,22*mm,18*mm,17*mm]),Spacer(1,5*mm)]
+  for title,ch in [('2.1 Änderung mit Fehlerband',level_chart(cs)),('2.2 Messstreuung',sd_chart(cs))]:
+   if ch:story+=[Paragraph(title,s['Heading2']),ch,Spacer(1,4*mm)]
+ else:story.append(Paragraph('Keine Nivellement-Messreihen im gewählten Zeitraum.',s['BodyText']))
+ story+=[PageBreak(),Paragraph('3. Rissmonitoring',s['Heading1']),Paragraph('Legende: Grün = stabil, Orange = Warnung/Beobachtung, Rot = Alarm/Handlungsbedarf. Diagrammlinien zeigen Referenz sowie Warn- und Alarmgrenzen.',s['Small']),Spacer(1,4*mm)]
+ for i,p in enumerate(pts,1):
+  if i>1:story.append(PageBreak())
+  story+=[Paragraph(f'3.{i} {esc(p.get("name") or "Messstelle")}',s['Heading2']),Paragraph(f'Ort: {esc(p.get("location") or "–")} · Art: {esc(p.get("crack_type") or "–")} · Status: {esc(p.get("status") or "–")} · Änderung: {f(p.get("delta"))} {esc(p.get("unit") or "mm")}',s['BodyText']),Spacer(1,3*mm)]
+  ch=crack_chart(p)
+  if ch:story+=[ch,Spacer(1,3*mm)]
+  ms=p.get('measurements',[]);rows=[['Datum','Temp.','Wert','Δ','Notiz']]+[[str(m.get('measured_at','')).replace('T',' '),f(m.get('air_temp'),1),f(m.get('value')),f(m.get('delta')),Paragraph(esc(m.get('notes') or ''),s['Small'])] for m in ms];story+=[tab(rows,[38*mm,18*mm,21*mm,21*mm,76*mm]),Spacer(1,4*mm)]
+  photos=[m for m in ms if m.get('photo_filename') and (Path(crack_dir)/m['photo_filename']).exists()]
+  if photos:
+   first,last=photos[0],photos[-1];a=image(Path(crack_dir)/first['photo_filename']);z=image(Path(crack_dir)/last['photo_filename']);cells=[]
+   for im,label in [(a,'Erstes Foto · '+str(first.get('measured_at','')).replace('T',' ')),(z,'Aktuelles Foto · '+str(last.get('measured_at','')).replace('T',' '))]:cells.append([im if im else '',Paragraph(esc(label),s['Caption'])])
+   story+=[Paragraph('Fotovergleich',s['Heading3']),Table([cells],colWidths=[88*mm,88*mm],style=[('VALIGN',(0,0),(-1,-1),'TOP'),('GRID',(0,0),(-1,-1),.25,colors.HexColor('#d9e1ea')),('PADDING',(0,0),(-1,-1),4)])]
+ if not pts:story.append(Paragraph('Keine Rissmessstellen vorhanden.',s['BodyText']))
+ story+=[Spacer(1,8*mm),Paragraph('4. Dokumentationshinweis',s['Heading1']),Paragraph('Dieser Bericht wurde aus den in Hausmonitor gespeicherten Messreihen, statistischen Kennwerten und Bilddateien erzeugt. Fehlende Werte werden mit einem Gedankenstrich dargestellt.',s['Small'])]
+ doc.build(story,onFirstPage=footer,onLaterPages=footer);b.seek(0);return b

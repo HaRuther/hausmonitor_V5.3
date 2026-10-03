@@ -1,14 +1,12 @@
-{% extends 'base.html' %}
-{% block content %}
-<div class="hero"><div><h1>Hausmonitor V5.3 LTS</h1><p>Nivellement und Rissmonitoring in einer stabilen Anwendung.</p></div><div><a class="button" href="/reports/all.pdf">PDF-Gesamtbericht</a></div></div>
-<div class="grid"><a class="card" href="/level"><h2>Nivellement</h2><b>{{ campaigns|length }} Messreihen</b></a><a class="card" href="/cracks"><h2>Rissmonitoring</h2><b>{{ points|length }} Messstellen</b></a></div>
-<section class="card assessment"><h2>Automatische Lagebeurteilung</h2><p>{{ assessment }}</p></section>
-{% if campaigns %}
-{% set h=campaigns[-1].stats.house %}
-<div class="kpis"><article class="card"><span>Änderung</span><strong>{{ '%+.3f'|format(h.delta) if h.delta is not none else '–' }} mm</strong></article><article class="card"><span>Standardfehler</span><strong>{{ '%.3f'|format(h.se) if h.se is not none else '–' }} mm</strong></article><article class="card"><span>SNR</span><strong>{{ '%.2f'|format(h.snr) if h.snr is not none else '–' }}</strong></article><article class="card"><span>Bewertung</span><strong>{{ h.quality }}</strong></article></div>
-<section class="card"><h2>Änderung mit Fehlerband</h2><svg id="noise" class="chart" viewBox="0 0 900 380" role="img" aria-label="Entwicklung der Hausdifferenz zwischen SW und SO"></svg><p class="hint">Hellblau: ± kombinierter Standardfehler aus SW und SO.</p></section>
-<section class="card"><h2>Anbau im Vergleich zur SW-Ecke</h2><svg id="extension" class="chart" viewBox="0 0 900 380" role="img" aria-label="Relative Entwicklung des Anbaus gegenüber der SW-Ecke"></svg><p class="hint">Änderung von ANB minus SW gegenüber der ersten vollständigen Messkampagne. Hellgrün: ± kombinierter Standardfehler.</p></section>
-<section class="card"><h2>Standardabweichung SW/SO</h2><svg id="sd" class="chart" viewBox="0 0 900 340" role="img" aria-label="Standardabweichung der Messpunkte SW und SO"></svg></section>
-{% endif %}
-{% endblock %}
-{% block data %}<script>window.CHART={{ chart|tojson }};window.EXTENSION_CHART={{ extension_chart|tojson }};</script>{% endblock %}
+{% extends 'base.html' %}{% block content %}
+<div class="hero"><div><h1>Hausmonitor V5.3 LTS</h1><p>Nivellement und Rissmonitoring auf einen Blick.</p></div><div><a class="button" href="/reports/all.pdf">PDF-Gesamtbericht</a></div></div>
+<section class="overview" aria-label="Monitoring-Übersicht">
+ <a class="overview-card" href="/level"><span class="overview-label">Messreihen</span><strong class="overview-number">{{overview.campaigns}}</strong><small>Nivellement</small></a>
+ <a class="overview-card" href="/cracks"><span class="overview-label">Messstellen</span><strong class="overview-number">{{overview.points}}</strong><small>aktive Rissmessstellen</small></a>
+ <a class="overview-card status-warning" href="/cracks"><span class="overview-label">Warnungen</span><strong class="overview-number">{{overview.warnings}}</strong><small>aktuell</small></a>
+ <a class="overview-card status-alarm" href="/cracks"><span class="overview-label">Alarme</span><strong class="overview-number">{{overview.alarms}}</strong><small>aktuell</small></a>
+ <article class="overview-card status-{{overview.overall}}"><span class="overview-label">Gesamtstatus</span><strong class="overview-status">{{'Stabil' if overview.overall=='ok' else 'Beobachten' if overview.overall=='warning' else 'Handlungsbedarf'}}</strong><small>Letzte Messung: {{overview.latest.replace('T',' ') if overview.latest else '–'}}</small></article>
+</section>
+<section class="card assessment status-border-{{overview.overall}}"><h2>Automatische Lagebeurteilung</h2><p>{{assessment}}</p></section>
+{% if campaigns %}{% set h=campaigns[-1].stats.house %}<div class="kpis"><article class="card"><span>Änderung</span><strong>{{'%+.3f'|format(h.delta) if h.delta is not none else '–'}} mm</strong></article><article class="card"><span>Standardfehler</span><strong>{{'%.3f'|format(h.se) if h.se is not none else '–'}} mm</strong></article><article class="card"><span>SNR</span><strong>{{'%.2f'|format(h.snr) if h.snr is not none else '–'}}</strong></article><article class="card"><span>Bewertung</span><strong>{{h.quality}}</strong></article></div><section class="card"><h2>Änderung mit Fehlerband</h2><svg id="noise" viewBox="0 0 900 380"></svg><p class="hint">Hellblau: ± kombinierter Standardfehler aus SW und SO.</p></section><section class="card"><h2>Standardabweichung SW/SO</h2><svg id="sd" viewBox="0 0 900 340"></svg></section>{% endif %}
+{% endblock %}{% block data %}<script>window.CHART={{chart|tojson}};</script>{% endblock %}
