@@ -21,9 +21,13 @@ def campaigns():
  with con() as c:rows=[dict(r) for r in c.execute('SELECT campaigns.*,devices.name device_name FROM campaigns LEFT JOIN devices ON devices.id=campaigns.device_id ORDER BY measured_at,id')]
  st=settings();tmp=[]
  for r in rows:tmp.append((r,{p:summ(grouped(r['id'])[p]) for p in POINTS}))
- rid=st.get('reference_campaign_id');base=next((o['SO']['mean']-o['SW']['mean'] for r,o in tmp if (not rid or r['id']==rid) and o['SW']['mean'] is not None and o['SO']['mean'] is not None),None);tb=next((o['TSO']['mean']-o['TSW']['mean'] for _,o in tmp if o['TSW']['mean'] is not None and o['TSO']['mean'] is not None),None)
+ rid=st.get('reference_campaign_id')
+ base=next((o['SO']['mean']-o['SW']['mean'] for r,o in tmp if (not rid or r['id']==rid) and o['SW']['mean'] is not None and o['SO']['mean'] is not None),None)
+ anb_base=next((o['ANB']['mean']-o['SW']['mean'] for r,o in tmp if (not rid or r['id']==rid) and o['SW']['mean'] is not None and o['ANB']['mean'] is not None),None)
+ tb=next((o['TSO']['mean']-o['TSW']['mean'] for _,o in tmp if o['TSW']['mean'] is not None and o['TSO']['mean'] is not None),None)
  out=[]
- for r,o in tmp:o['house']=pair(o['SW'],o['SO'],base);o['terrace']=pair(o['TSW'],o['TSO'],tb);r['stats']=o;out.append(r)
+ for r,o in tmp:
+  o['house']=pair(o['SW'],o['SO'],base);o['anb_sw']=pair(o['SW'],o['ANB'],anb_base);o['terrace']=pair(o['TSW'],o['TSO'],tb);r['stats']=o;out.append(r)
  return out
 def assessment(cs):
  if not cs:return 'Es liegen noch keine Nivellement-Messreihen vor.'
