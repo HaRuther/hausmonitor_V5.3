@@ -2,6 +2,7 @@ import csv,hmac,io,os,uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from math import sqrt
 import qrcode
 from fastapi import FastAPI,Form,File,UploadFile,Request,HTTPException
 from fastapi.responses import HTMLResponse,RedirectResponse,FileResponse,StreamingResponse,Response
@@ -34,8 +35,17 @@ def logout(request:Request):request.session.clear();return RedirectResponse('/lo
 @app.get('/',response_class=HTMLResponse)
 def home(request:Request):
  if (x:=guard(request)):return x
- cs=campaigns();chart=[{'date':c['measured_at'],'delta':c['stats']['house']['delta'],'se':c['stats']['house']['se'],'low':c['stats']['house']['delta']-c['stats']['house']['se'] if c['stats']['house']['delta'] is not None and c['stats']['house']['se'] is not None else None,'high':c['stats']['house']['delta']+c['stats']['house']['se'] if c['stats']['house']['delta'] is not None and c['stats']['house']['se'] is not None else None,'sd_sw':c['stats']['SW']['sd'],'sd_so':c['stats']['SO']['sd']} for c in cs]
- return tpl.TemplateResponse(request=request,name='home.html',context={'campaigns':cs,'points':crack_points(),'assessment':assessment(cs),'chart':chart})
+ cs=campaigns()
+ chart=[{'date':c['measured_at'],'delta':c['stats']['house']['delta'],'se':c['stats']['house']['se'],'low':c['stats']['house']['delta']-c['stats']['house']['se'] if c['stats']['house']['delta'] is not None and c['stats']['house']['se'] is not None else None,'high':c['stats']['house']['delta']+c['stats']['house']['se'] if c['stats']['house']['delta'] is not None and c['stats']['house']['se'] is not None else None,'sd_sw':c['stats']['SW']['sd'],'sd_so':c['stats']['SO']['sd']} for c in cs]
+ anb_sw_reference=next((c['stats']['ANB']['mean']-c['stats']['SW']['mean'] for c in cs if c['stats']['ANB']['mean'] is not None and c['stats']['SW']['mean'] is not None),None)
+ extension_chart=[]
+ for c in cs:
+  anb=c['stats']['ANB'];sw=c['stats']['SW']
+  difference=anb['mean']-sw['mean'] if anb['mean'] is not None and sw['mean'] is not None else None
+  delta=difference-anb_sw_reference if difference is not None and anb_sw_reference is not None else None
+  se=sqrt(anb['se']**2+sw['se']**2) if anb['se'] is not None and sw['se'] is not None else None
+  extension_chart.append({'date':c['measured_at'],'delta':delta,'se':se,'low':delta-se if delta is not None and se is not None else None,'high':delta+se if delta is not None and se is not None else None})
+ return tpl.TemplateResponse(request=request,name='home.html',context={'campaigns':cs,'points':crack_points(),'assessment':assessment(cs),'chart':chart,'extension_chart':extension_chart})
 @app.get('/level',response_class=HTMLResponse)
 def level(request:Request):
  if (x:=guard(request)):return x
@@ -121,7 +131,8 @@ def crackdetail(request:Request,pid:int):
  if (x:=guard(request)):return x
  p=crack_point(pid)
  if not p:raise HTTPException(404)
- return tpl.TemplateResponse(request=request,name='crack_detail.html',context={'p':p})
+ crack_chart=[{'date':m['measured_at'],'value':m['value'],'delta':m['delta'],'temperature':m['air_temp']} for m in p['measurements']]
+ return tpl.TemplateResponse(request=request,name='crack_detail.html',context={'p':p,'crack_chart':crack_chart})
 @app.get('/cracks/{pid}/new',response_class=HTMLResponse)
 def measnew(request:Request,pid:int):
  if (x:=guard(request)):return x
