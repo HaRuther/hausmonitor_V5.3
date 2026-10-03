@@ -1,12 +1,107 @@
-{% extends 'base.html' %}{% block content %}
-<div class="hero"><div><h1>Hausmonitor V5.3 LTS</h1><p>Nivellement und Rissmonitoring auf einen Blick.</p></div><div><a class="button" href="/reports/all.pdf">PDF-Gesamtbericht</a></div></div>
-<section class="overview" aria-label="Monitoring-Übersicht">
- <a class="overview-card" href="/level"><span class="overview-label">Messreihen</span><strong class="overview-number">{{overview.campaigns}}</strong><small>Nivellement</small></a>
- <a class="overview-card" href="/cracks"><span class="overview-label">Messstellen</span><strong class="overview-number">{{overview.points}}</strong><small>aktive Rissmessstellen</small></a>
- <a class="overview-card status-warning" href="/cracks"><span class="overview-label">Warnungen</span><strong class="overview-number">{{overview.warnings}}</strong><small>aktuell</small></a>
- <a class="overview-card status-alarm" href="/cracks"><span class="overview-label">Alarme</span><strong class="overview-number">{{overview.alarms}}</strong><small>aktuell</small></a>
- <article class="overview-card status-{{overview.overall}}"><span class="overview-label">Gesamtstatus</span><strong class="overview-status">{{'Stabil' if overview.overall=='ok' else 'Beobachten' if overview.overall=='warning' else 'Handlungsbedarf'}}</strong><small>Letzte Messung: {{overview.latest.replace('T',' ') if overview.latest else '–'}}</small></article>
+{% extends 'base.html' %}
+
+{% block content %}
+{% set latest = campaigns[-1] if campaigns else none %}
+{% set h = latest.stats.house if latest else none %}
+
+<section class="hero">
+  <div class="hero-copy">
+    <h1>Hausmonitor V5.3 LTS</h1>
+    <p>Nivellement und Rissmonitoring auf einen Blick.</p>
+  </div>
+  <a class="button" href="/reports/all.pdf">PDF-Gesamtbericht</a>
 </section>
-<section class="card assessment status-border-{{overview.overall}}"><h2>Automatische Lagebeurteilung</h2><p>{{assessment}}</p></section>
-{% if campaigns %}{% set h=campaigns[-1].stats.house %}<div class="kpis"><article class="card"><span>Änderung</span><strong>{{'%+.3f'|format(h.delta) if h.delta is not none else '–'}} mm</strong></article><article class="card"><span>Standardfehler</span><strong>{{'%.3f'|format(h.se) if h.se is not none else '–'}} mm</strong></article><article class="card"><span>SNR</span><strong>{{'%.2f'|format(h.snr) if h.snr is not none else '–'}}</strong></article><article class="card"><span>Bewertung</span><strong>{{h.quality}}</strong></article></div><section class="card"><h2>Änderung mit Fehlerband</h2><svg id="noise" viewBox="0 0 900 380"></svg><p class="hint">Hellblau: ± kombinierter Standardfehler aus SW und SO.</p></section><section class="card"><h2>Standardabweichung SW/SO</h2><svg id="sd" viewBox="0 0 900 340"></svg></section>{% endif %}
-{% endblock %}{% block data %}<script>window.CHART={{chart|tojson}};</script>{% endblock %}
+
+<section class="dashboard-grid" aria-label="Übersicht">
+  <a class="dashboard-card" href="/level">
+    <span class="card-icon" aria-hidden="true">↕</span>
+    <span class="card-label">Messreihen</span>
+    <strong class="card-value">{{ campaigns|length }}</strong>
+    <span class="card-meta">Nivellement öffnen</span>
+  </a>
+
+  <a class="dashboard-card" href="/cracks">
+    <span class="card-icon" aria-hidden="true">⌁</span>
+    <span class="card-label">Messstellen</span>
+    <strong class="card-value">{{ points|length }}</strong>
+    <span class="card-meta">Rissmonitoring öffnen</span>
+  </a>
+
+  <article class="dashboard-card status-card">
+    <span class="card-icon" aria-hidden="true">✓</span>
+    <span class="card-label">Gesamtstatus</span>
+    <strong class="card-value">{{ h.quality if h else 'Keine Daten' }}</strong>
+    <span class="card-meta">Automatische Bewertung</span>
+  </article>
+
+  <article class="dashboard-card">
+    <span class="card-icon" aria-hidden="true">◷</span>
+    <span class="card-label">Letzte Messung</span>
+    <strong class="card-value">{{ latest.measured_at if latest else '–' }}</strong>
+    <span class="card-meta">Zuletzt erfasste Messreihe</span>
+  </article>
+</section>
+
+<div class="dashboard-layout">
+  <div>
+    <section class="card assessment">
+      <h2>Automatische Lagebeurteilung</h2>
+      <p>{{ assessment }}</p>
+    </section>
+
+    {% if campaigns %}
+    <section class="card chart-card">
+      <h2>Änderung mit Fehlerband</h2>
+      <svg id="noise" viewBox="0 0 900 380" role="img" aria-label="Änderung mit Fehlerband"></svg>
+      <p class="hint">Hellblau: ± kombinierter Standardfehler aus SW und SO.</p>
+    </section>
+
+    <section class="card chart-card">
+      <h2>Standardabweichung SW/SO</h2>
+      <svg id="sd" viewBox="0 0 900 340" role="img" aria-label="Standardabweichung Südwest und Südost"></svg>
+    </section>
+    {% endif %}
+  </div>
+
+  <aside>
+    <section class="card">
+      <h2>Aktuelle Kennzahlen</h2>
+      {% if h %}
+      <div class="metrics-list">
+        <div class="metric-row">
+          <span>Änderung</span>
+          <strong>{{ '%+.3f'|format(h.delta) if h.delta is not none else '–' }} mm</strong>
+        </div>
+        <div class="metric-row">
+          <span>Standardfehler</span>
+          <strong>{{ '%.3f'|format(h.se) if h.se is not none else '–' }} mm</strong>
+        </div>
+        <div class="metric-row">
+          <span>SNR</span>
+          <strong>{{ '%.2f'|format(h.snr) if h.snr is not none else '–' }}</strong>
+        </div>
+        <div class="metric-row">
+          <span>Bewertung</span>
+          <strong>{{ h.quality }}</strong>
+        </div>
+      </div>
+      {% else %}
+      <p class="hint">Noch keine Messdaten vorhanden.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Schnellzugriff</h2>
+      <div class="metrics-list">
+        <div class="metric-row"><span>Messreihen</span><a href="/level">Öffnen</a></div>
+        <div class="metric-row"><span>Rissmonitoring</span><a href="/cracks">Öffnen</a></div>
+        <div class="metric-row"><span>Gesamtbericht</span><a href="/reports/all.pdf">PDF laden</a></div>
+      </div>
+    </section>
+  </aside>
+</div>
+{% endblock %}
+
+{% block data %}
+<script>window.CHART={{ chart|tojson }};</script>
+{% endblock %}
