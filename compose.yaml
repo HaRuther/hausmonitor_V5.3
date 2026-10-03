@@ -1,0 +1,14 @@
+services:
+  hausmonitor:
+    build: .
+    container_name: hausmonitor-v5
+    restart: unless-stopped
+    environment:
+      APP_PASSWORD: ${APP_PASSWORD}
+      SECRET_KEY: ${SECRET_KEY}
+      DATABASE_PATH: /data/hausmonitor.db
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - ./data:/data
+    ports:
+      - "8000:8000"
